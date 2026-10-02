@@ -1,0 +1,20 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Das Gerät ist bereits eingerichtet",
+            "not_implemented": "Diese Integration kann nur über die automatische Bluetooth-Erkennung eingerichtet werden. Es wurden keine Geräte gefunden."
+        },
+        "error": {
+            "cannot_connect": "Verbindung fehlgeschlagen",
+            "cannot_negotiate": "Die Aushandlung der Verschlüsselung ist fehlgeschlagen. Ist das Gerät zu weit entfernt?",
+            "no_scanners": "Es sind keine Bluetooth-Scanner verfügbar, um nach dem Gerät zu suchen.",
+            "not_found": "Das Gerät wurde nicht gefunden.",
+            "unknown": "Unerwarteter Fehler"
+        },
+        "step": {
+            "confirm": {
+                "description": "Wähle das richtige Modell für {name} ({mac}) aus. Stelle sicher, dass die Verbindungsanzeige blinkt!"
+            }
+        }
+    }
+}
