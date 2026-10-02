@@ -1,14 +1,15 @@
 """Test the SolixBLE integration config flow."""
 
-from typing import Union
 from unittest.mock import AsyncMock, PropertyMock, patch
 
 import pytest
+from bleak.backends.device import BLEDevice
 from homeassistant import config_entries
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.solix_ble.const import DOMAIN
 
@@ -29,10 +30,8 @@ from . import (
     MOCK_PRIME_POWER_BANK_20K_DETAILS,
     MOCK_SOLAR_BANK_2_DETAILS,
     MOCK_UNKNOWN_DETAILS,
-    BLEDevice,
     MockDeviceDetails,
 )
-from .conftest import MockConfigEntry
 
 
 @pytest.mark.parametrize(
@@ -123,7 +122,7 @@ async def test_bluetooth_form(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == mock_device_details.name
     assert result["result"].unique_id == device_registry.format_mac(
-        mock_device_details.addr
+        mock_device_details.addr,
     )
     assert result["result"].data == {"model": mock_device_details.model_class.value}
 
@@ -131,10 +130,25 @@ async def test_bluetooth_form(
 
 
 @pytest.mark.parametrize(
-    "mock_device_details,ble_device,scanner_count,connect,connected,negotiated,error",
+    (
+        "mock_device_details",
+        "ble_device",
+        "scanner_count",
+        "connect",
+        "connected",
+        "negotiated",
+        "error",
+    ),
     [
         pytest.param(
-            MOCK_C300_DETAILS, None, 1, True, True, True, "not_found", id="not_found"
+            MOCK_C300_DETAILS,
+            None,
+            1,
+            True,
+            True,
+            True,
+            "not_found",
+            id="not_found",
         ),
         pytest.param(
             MOCK_C300_DETAILS,
@@ -184,7 +198,7 @@ async def test_bluetooth_form_error(
     mock_device_details: MockDeviceDetails,
     ble_device: BLEDevice,
     scanner_count: int,
-    connect: Union[bool, Exception],
+    connect: bool | Exception,
     connected: bool,
     negotiated: bool,
     error: str,
@@ -268,7 +282,7 @@ async def test_bluetooth_form_error(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == mock_device_details.name
     assert result["result"].unique_id == device_registry.format_mac(
-        mock_device_details.addr
+        mock_device_details.addr,
     )
     assert result["result"].data == {"model": mock_device_details.model_class.value}
 
@@ -282,14 +296,15 @@ async def test_user_form_exception(
     """Test the user form raises a discovery only error."""
 
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "not_implemented"
 
 
 @pytest.mark.parametrize(
-    "mock_setup_entry, mock_config_entry, mock_device_details",
+    ("mock_setup_entry", "mock_config_entry", "mock_device_details"),
     [
         pytest.param(None, MOCK_C300_DETAILS, MOCK_C300_DETAILS, id="C300"),
         pytest.param(None, MOCK_C1000_DETAILS, MOCK_C1000_DETAILS, id="C1000"),
@@ -317,7 +332,7 @@ async def test_bluetooth_form_exception_already_set_up(
 
 
 @pytest.mark.parametrize(
-    "mock_config_entry,mock_device_details",
+    ("mock_config_entry", "mock_device_details"),
     [
         pytest.param(MOCK_C300_DETAILS, MOCK_C1000_DETAILS, id="c300_and_c1000"),
         pytest.param(MOCK_C300_DETAILS, MOCK_UNKNOWN_DETAILS, id="c300_and_unknown"),
@@ -339,9 +354,9 @@ async def test_bluetooth_form_multiple_set_up(
         context={"source": config_entries.SOURCE_BLUETOOTH},
         data=mock_device_details.get_service_info(),
     )
-    assert (
-        result["type"] is FlowResultType.FORM
-    ), f"{mock_config_entry} AND {mock_device_details}"
+    assert result["type"] is FlowResultType.FORM, (
+        f"{mock_config_entry} AND {mock_device_details}"
+    )
     assert result["step_id"] == "confirm"
     assert result["description_placeholders"] == {
         CONF_NAME: mock_device_details.name,

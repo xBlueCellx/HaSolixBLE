@@ -10,7 +10,10 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.solix_ble.const import DOMAIN
 
@@ -33,11 +36,17 @@ from . import (
     MOCK_UNKNOWN_DETAILS,
     MockDeviceDetails,
 )
-from .conftest import MockConfigEntry
+
+
+def assert_config_entry_state(
+    entry: MockConfigEntry, expected: ConfigEntryState
+) -> None:
+    """Check an entry's current state after an asynchronous transition."""
+    assert entry.state is expected
 
 
 @pytest.mark.parametrize(
-    "mock_config_entry,mock_device_details",
+    ("mock_config_entry", "mock_device_details"),
     [
         pytest.param(MOCK_C300_DETAILS, MOCK_C300_DETAILS, id="c300"),
         pytest.param(MOCK_C300X_DETAILS, MOCK_C300X_DETAILS, id="c300x"),
@@ -51,12 +60,20 @@ from .conftest import MockConfigEntry
         pytest.param(MOCK_F3800_DETAILS, MOCK_F3800_DETAILS, id="f3800"),
         pytest.param(MOCK_PRIME_160_DETAILS, MOCK_PRIME_160_DETAILS, id="prime_160w"),
         pytest.param(MOCK_PRIME_250_DETAILS, MOCK_PRIME_250_DETAILS, id="prime_250w"),
-        pytest.param(MOCK_PRIME_POWER_BANK_20K_DETAILS, MOCK_PRIME_POWER_BANK_20K_DETAILS, id="prime_power_bank_20k"),
         pytest.param(
-            MOCK_MAGGO_3IN1_DETAILS, MOCK_MAGGO_3IN1_DETAILS, id="maggo_3in1"
+            MOCK_PRIME_POWER_BANK_20K_DETAILS,
+            MOCK_PRIME_POWER_BANK_20K_DETAILS,
+            id="prime_power_bank_20k",
         ),
         pytest.param(
-            MOCK_SOLAR_BANK_2_DETAILS, MOCK_SOLAR_BANK_2_DETAILS, id="solar_bank_2"
+            MOCK_MAGGO_3IN1_DETAILS,
+            MOCK_MAGGO_3IN1_DETAILS,
+            id="maggo_3in1",
+        ),
+        pytest.param(
+            MOCK_SOLAR_BANK_2_DETAILS,
+            MOCK_SOLAR_BANK_2_DETAILS,
+            id="solar_bank_2",
         ),
         pytest.param(MOCK_UNKNOWN_DETAILS, MOCK_UNKNOWN_DETAILS, id="unknown"),
     ],
@@ -94,11 +111,20 @@ async def test_setup(
     ):
         assert await async_setup_component(hass, DOMAIN, {}) is True
         await hass.async_block_till_done()
-        assert mock_config_entry.state is ConfigEntryState.LOADED
+        assert_config_entry_state(mock_config_entry, ConfigEntryState.LOADED)
 
 
 @pytest.mark.parametrize(
-    "mock_config_entry,mock_device_details,ble_device,scanner_count,connect,connected,negotiated,error",
+    (
+        "mock_config_entry",
+        "mock_device_details",
+        "ble_device",
+        "scanner_count",
+        "connect",
+        "connected",
+        "negotiated",
+        "error",
+    ),
     [
         pytest.param(
             MOCK_C300_DETAILS,
@@ -211,7 +237,7 @@ async def test_setup_error(
     ):
         assert await async_setup_component(hass, DOMAIN, {}) is True
         await hass.async_block_till_done()
-        assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+        assert_config_entry_state(mock_config_entry, ConfigEntryState.SETUP_RETRY)
         assert error in caplog.text
 
     # Then we test when that problem is gone to make sure it still works
@@ -243,4 +269,4 @@ async def test_setup_error(
         async_fire_time_changed(hass, next_retry)
         await hass.async_block_till_done()
         await asyncio.sleep(0.2)
-        assert mock_config_entry.state is ConfigEntryState.LOADED
+        assert_config_entry_state(mock_config_entry, ConfigEntryState.LOADED)

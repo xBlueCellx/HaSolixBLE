@@ -3,7 +3,6 @@
 import asyncio
 from contextlib import ExitStack
 from datetime import datetime
-from typing import Any, Tuple, Union
 from unittest.mock import PropertyMock, patch
 
 import pytest
@@ -42,14 +41,19 @@ from . import (
     MOCK_UNKNOWN_DETAILS,
     MOCK_UNKNOWN_TEST_DATA,
     MockDeviceDetails,
+    SensorTestData,
 )
 
 
 @pytest.mark.parametrize(
-    "mock_config_entry,mock_device_details,class_name,test_data",
+    ("mock_config_entry", "mock_device_details", "class_name", "test_data"),
     [
         pytest.param(
-            MOCK_C300_DETAILS, MOCK_C300_DETAILS, "C300", MOCK_C300_TEST_DATA, id="c300"
+            MOCK_C300_DETAILS,
+            MOCK_C300_DETAILS,
+            "C300",
+            MOCK_C300_TEST_DATA,
+            id="c300",
         ),
         pytest.param(
             MOCK_C300DC_DETAILS,
@@ -59,7 +63,11 @@ from . import (
             id="c300dc",
         ),
         pytest.param(
-            MOCK_C800_DETAILS, MOCK_C800_DETAILS, "C800", MOCK_C800_TEST_DATA, id="c800"
+            MOCK_C800_DETAILS,
+            MOCK_C800_DETAILS,
+            "C800",
+            MOCK_C800_TEST_DATA,
+            id="c800",
         ),
         pytest.param(
             MOCK_C1000_DETAILS,
@@ -146,7 +154,7 @@ async def test_sensor_entities(
     mock_config_entry: MockConfigEntry,
     mock_device_details: MockDeviceDetails,
     class_name: str,
-    test_data: dict[str, Union[Tuple[str, Any], Any]],
+    test_data: SensorTestData,
 ) -> None:
     """Test that the entities are added and show the expected values."""
 
@@ -178,15 +186,14 @@ async def test_sensor_entities(
         ),
         ExitStack() as dynamic_context,
     ):
-
         # We dynamically patch all of the sensor entities in the test data
         for key, value in test_data.items():
             dynamic_context.enter_context(
                 patch(
                     f"SolixBLE.{class_name}.{key}",
                     new_callable=PropertyMock,
-                    return_value=(value[1] if type(value) is tuple else value),
-                )
+                    return_value=(value[1] if isinstance(value, tuple) else value),
+                ),
             )
 
         # Set up the integration
@@ -194,45 +201,33 @@ async def test_sensor_entities(
         await hass.async_block_till_done()
         await asyncio.sleep(1)
 
-        # Check that the entities exist and are showing what we expect
-        for key, value in test_data.items():
-
-            # If the entity ID is manually specified use that rather
-            # than using the method name of the underlying class
-            str_value = None
-            if type(value) is tuple:
-                key = value[0]
-                str_value = value[2] if len(value) == 3 else None
-                value = value[1]
-
-            # There are not enough words in the universe to express how
-            # much I hate timezones
-            if type(value) is datetime:
-                value = f"{value.strftime("%Y-%m-%dT%H:%M:%S")}+00:00"
-
-            # If the value is a port or light status then we format
-            # its name to get the correct value that HA will have
-            elif type(value) is PortStatus or type(value) is LightStatus:
-                value = value.name.capitalize().replace("_", " ")
-
-            elif str_value is not None:
-                value = str_value
-
+        # Check that the entities exist and show the expected values.
+        for attribute, expected in test_data.items():
+            entity_attribute = attribute
+            string_value = None
+            if isinstance(expected, tuple):
+                entity_attribute, actual_value, *overrides = expected
+                string_value = overrides[0] if overrides else None
             else:
-                value = f"{value}"
+                actual_value = expected
 
-            # Calculate entity ID and get value
+            if isinstance(actual_value, datetime):
+                value = f"{actual_value.strftime('%Y-%m-%dT%H:%M:%S')}+00:00"
+            elif isinstance(actual_value, (PortStatus, LightStatus)):
+                value = actual_value.name.capitalize().replace("_", " ")
+            elif string_value is not None:
+                value = string_value
+            else:
+                value = str(actual_value)
+
             entity_id = (
-                f"sensor.{ mock_config_entry.title.lower().replace(" ", "_")}_{key}"
+                f"sensor.{mock_config_entry.title.lower().replace(' ', '_')}"
+                f"_{entity_attribute}"
             )
             entity = hass.states.get(entity_id)
-
-            # Check that entity ID exists
-            assert (
-                entity is not None
-            ), f"Expected to find '{value}' at '{entity_id}' but instead got None!"
-
-            # Check that entities state matches what we expect
-            assert (
-                f"{entity.state}" == value
-            ), f"Expected to find '{value}' at '{entity_id}' but instead the entity was '{entity.state}'!"
+            assert entity is not None, (
+                f"Expected to find '{value}' at '{entity_id}' but instead got None!"
+            )
+            assert entity.state == value, (
+                f"Expected '{value}' at '{entity_id}', but got '{entity.state}'!"
+            )

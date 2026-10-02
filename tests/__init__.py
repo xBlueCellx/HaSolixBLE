@@ -2,9 +2,10 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from enum import Enum
 
-from bleak.backends.scanner import AdvertisementData, BLEDevice
+from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
 from habluetooth import BluetoothServiceInfoBleak
 from SolixBLE import ChargingStatus, LightStatus, PortStatus
 from SolixBLE.devices.solarbank2 import (
@@ -17,51 +18,32 @@ from SolixBLE.devices.solarbank2 import (
 
 from custom_components.solix_ble.const import Models
 
-# Copied from HA Bluetooth tests
-ADVERTISEMENT_DATA_DEFAULTS = {
-    "local_name": "",
-    "manufacturer_data": {},
-    "service_data": {},
-    "service_uuids": [],
-    "rssi": -127,
-    "platform_data": ((),),
-    "tx_power": -127,
-}
-
-# Copied from HA Bluetooth tests
-BLE_DEVICE_DEFAULTS = {
-    "name": None,
-    "details": None,
-}
+type SensorValue = float | str | datetime | Enum | None
+type SensorTestData = dict[
+    str, SensorValue | tuple[str, SensorValue] | tuple[str, SensorValue, str]
+]
 
 
-# Copied from HA Bluetooth tests
-def generate_advertisement_data(**kwargs: Any) -> AdvertisementData:
+def generate_advertisement_data(
+    *,
+    local_name: str = "",
+    manufacturer_data: dict[int, bytes] | None = None,
+) -> AdvertisementData:
     """Generate advertisement data with defaults."""
-    new = kwargs.copy()
-    for key, value in ADVERTISEMENT_DATA_DEFAULTS.items():
-        new.setdefault(key, value)
-    return AdvertisementData(**new)
+    return AdvertisementData(
+        local_name=local_name,
+        manufacturer_data=manufacturer_data or {},
+        service_data={},
+        service_uuids=[],
+        rssi=-127,
+        platform_data=((),),
+        tx_power=-127,
+    )
 
 
-# Copied from HA Bluetooth tests
-def generate_ble_device(
-    address: str | None = None,
-    name: str | None = None,
-    details: Any | None = None,
-    **kwargs: Any,
-) -> BLEDevice:
+def generate_ble_device(address: str, name: str | None = None) -> BLEDevice:
     """Generate a BLEDevice with defaults."""
-    new = kwargs.copy()
-    if address is not None:
-        new["address"] = address
-    if name is not None:
-        new["name"] = name
-    if details is not None:
-        new["details"] = details
-    for key, value in BLE_DEVICE_DEFAULTS.items():
-        new.setdefault(key, value)
-    return BLEDevice(**new)
+    return BLEDevice(address=address, name=name, details=None)
 
 
 @dataclass
@@ -74,9 +56,11 @@ class MockDeviceDetails:
     model_class: Models
 
     def get_ble_device(self) -> BLEDevice:
+        """Build the Bluetooth device for this test case."""
         return generate_ble_device(self.addr, self.name)
 
     def get_service_info(self) -> BluetoothServiceInfoBleak:
+        """Build the discovery information for this test case."""
         return BluetoothServiceInfoBleak(
             name=self.name,
             manufacturer_data={0: b""},
@@ -213,7 +197,7 @@ MOCK_UNKNOWN_DETAILS = MockDeviceDetails(
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_C300_TEST_DATA = {
+MOCK_C300_TEST_DATA: SensorTestData = {
     "ac_timer": datetime.now(UTC),
     "dc_timer": datetime.now(UTC),
     "hours_remaining": ("remaining_hours", 1),
@@ -230,8 +214,7 @@ MOCK_C300_TEST_DATA = {
     "solar_power_in": 10,
     "power_in": ("total_power_in", 11),
     "power_out": ("total_power_out", 12),
-    # TODO: Solar port is broken in underlying library
-    # "solar_port": ("status_solar", PortStatus.INPUT),
+    # Solar port status is omitted because the underlying library is broken.
     "battery_percentage": 13,
     "usb_port_c1": ("status_usb_c1", PortStatus.OUTPUT),
     "usb_port_c2": ("status_usb_c2", PortStatus.NOT_CONNECTED),
@@ -245,7 +228,7 @@ MOCK_C300_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_C300DC_TEST_DATA = {
+MOCK_C300DC_TEST_DATA: SensorTestData = {
     "dc_timer": datetime.now(UTC),
     "hours_remaining": ("remaining_hours", 1),
     "days_remaining": ("remaining_days", 2),
@@ -279,7 +262,7 @@ MOCK_C300DC_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it.
-MOCK_C800_TEST_DATA = {
+MOCK_C800_TEST_DATA: SensorTestData = {
     "ac_timer": datetime.now(UTC),
     "hours_remaining": ("remaining_hours", 5),
     "days_remaining": ("remaining_days", 6),
@@ -294,8 +277,7 @@ MOCK_C800_TEST_DATA = {
     "solar_power_in": 0,
     "power_in": ("total_power_in", 89),
     "power_out": ("total_power_out", 102),
-    # TODO: Solar port is broken in underlying library
-    # "solar_port": ("status_solar", PortStatus.INPUT),
+    # Solar port status is omitted because the underlying library is broken.
     "ac_output": ("status_ac_out", PortStatus.OUTPUT),
     "battery_percentage": 100,
 }
@@ -303,7 +285,7 @@ MOCK_C800_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_C1000_TEST_DATA = {
+MOCK_C1000_TEST_DATA: SensorTestData = {
     "ac_timer": datetime.now(UTC),
     "hours_remaining": ("remaining_hours", 1),
     "days_remaining": ("remaining_days", 2),
@@ -319,8 +301,7 @@ MOCK_C1000_TEST_DATA = {
     "solar_power_in": 10,
     "power_in": ("total_power_in", 11),
     "power_out": ("total_power_out", 12),
-    # TODO: Solar port is broken in underlying library
-    # "solar_port": ("status_solar", PortStatus.INPUT),
+    # Solar port status is omitted because the underlying library is broken.
     "ac_output": ("status_ac_out", PortStatus.NOT_CONNECTED),
     "dc_output": ("status_dc_out", PortStatus.NOT_CONNECTED),
     "battery_percentage": 13,
@@ -329,7 +310,7 @@ MOCK_C1000_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_F2000_TEST_DATA = {
+MOCK_F2000_TEST_DATA: SensorTestData = {
     "hours_remaining": ("remaining_hours", 1),
     "days_remaining": ("remaining_days", 2),
     "time_remaining": ("remaining_time", 3),
@@ -357,7 +338,7 @@ MOCK_F2000_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_F2600_TEST_DATA = {
+MOCK_F2600_TEST_DATA: SensorTestData = {
     "charging_status": ("charging_status", ChargingStatus.IDLE, "Idle"),
     "hours_remaining": ("remaining_hours", 1),
     "days_remaining": ("remaining_days", 2),
@@ -402,7 +383,7 @@ MOCK_F2600_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_PRIME_160_TEST_DATA = {
+MOCK_PRIME_160_TEST_DATA: SensorTestData = {
     "usb_c1_power": 5.0,
     "usb_c2_power": 0.0,
     "usb_c3_power": 7.67,
@@ -420,7 +401,7 @@ MOCK_PRIME_160_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_PRIME_250_TEST_DATA = {
+MOCK_PRIME_250_TEST_DATA: SensorTestData = {
     "usb_c1_power": 0.0,
     "usb_c2_power": 24.5,
     "usb_c3_power": 120.4,
@@ -450,7 +431,7 @@ MOCK_PRIME_250_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_PRIME_POWER_BANK_20K_TEST_DATA = {
+MOCK_PRIME_POWER_BANK_20K_TEST_DATA: SensorTestData = {
     "battery_percentage": 69,
     "temperature": 35,
     "power_out": ("total_power_out", 3.1),
@@ -471,7 +452,7 @@ MOCK_PRIME_POWER_BANK_20K_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_MAGGO_3IN1_TEST_DATA = {
+MOCK_MAGGO_3IN1_TEST_DATA: SensorTestData = {
     "pad_1_power": 5.0,
     "pad_2_power": 0.0,
     "pad_3_power": 7.5,
@@ -482,7 +463,7 @@ MOCK_MAGGO_3IN1_TEST_DATA = {
 # Sometimes the method name we are patching and the
 # entity ID do not line up, so a tuple is used to
 # manually specify it
-MOCK_SOLAR_BANK_2_TEST_DATA = {
+MOCK_SOLAR_BANK_2_TEST_DATA: SensorTestData = {
     "battery_percentage": 56,
     "software_version": ("firmware_version", "0.0.1"),
     "software_version_expansion": ("expansion_battery_firmware_version", "0.0.2"),
@@ -518,4 +499,4 @@ MOCK_SOLAR_BANK_2_TEST_DATA = {
     "battery_heating": True,
 }
 
-MOCK_UNKNOWN_TEST_DATA = {}
+MOCK_UNKNOWN_TEST_DATA: SensorTestData = {}

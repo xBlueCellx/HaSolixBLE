@@ -2,11 +2,10 @@
 
 import asyncio
 from contextlib import nullcontext
-from typing import Any, Union
 from unittest.mock import PropertyMock, patch
 
 import pytest
-from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
+from homeassistant.components.switch.const import DOMAIN as SWITCH_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -36,8 +35,24 @@ from . import (
 )
 
 
+def assert_switch_state(hass: HomeAssistant, entity_id: str, expected: str) -> None:
+    """Check that a switch exists and has the expected state."""
+    state = hass.states.get(entity_id)
+    assert state is not None, f"Expected switch '{entity_id}' to exist"
+    assert state.state == expected
+
+
 @pytest.mark.parametrize(
-    "mock_config_entry,mock_device_details,class_name,attribute,state_attribute,on_attribute,off_attribute,on_off_sequence",
+    (
+        "mock_config_entry",
+        "mock_device_details",
+        "class_name",
+        "attribute",
+        "state_attribute",
+        "on_attribute",
+        "off_attribute",
+        "on_off_sequence",
+    ),
     [
         pytest.param(
             MOCK_C300_DETAILS,
@@ -293,24 +308,23 @@ async def test_switch_entities(
     state_attribute: str | None,
     on_attribute: str,
     off_attribute: str,
-    on_off_sequence: Union[tuple[Any, Any, Any], None],
+    on_off_sequence: tuple[PortStatus, PortStatus, PortStatus] | None,
 ) -> None:
     """
     Test that the entities are added and show the expected values.
 
-    :param on_off_sequence: The sequence of values that will be sent to the switch entity to represent its changing state.
+    :param on_off_sequence: Values sent to represent changes in switch state.
     """
 
     mock_config_entry.add_to_hass(hass)
 
-    captured_self: SolixBLEDevice = None
+    captured_devices: list[SolixBLEDevice] = []
 
     def connect_side_effect(
         self: SolixBLEDevice,
-    ):
-        """We use this to capture the device object so we can run callbacks on it."""
-        nonlocal captured_self
-        captured_self = self
+    ) -> bool:
+        """Capture the device object so the test can run state callbacks."""
+        captured_devices.append(self)
         return True
 
     with (
@@ -351,32 +365,32 @@ async def test_switch_entities(
         patch(f"SolixBLE.{class_name}.{on_attribute}") as mock_on_function,
         patch(f"SolixBLE.{class_name}.{off_attribute}") as mock_off_function,
     ):
-
         # Set up the integration
         assert await async_setup_component(hass, DOMAIN, {}) is True
         await hass.async_block_till_done()
         await asyncio.sleep(1)
 
+        assert captured_devices
+        captured_self = captured_devices[0]
+
         # Calculate entity ID
         entity_id = (
-            f"switch.{ mock_config_entry.title.lower().replace(" ", "_")}_{attribute}"
+            f"switch.{mock_config_entry.title.lower().replace(' ', '_')}_{attribute}"
         )
 
         # If we have a state attribute we should start in the off position
         if state_attribute:
+            assert mock_state_attribute is not None
+            assert on_off_sequence is not None
             mock_state_attribute.return_value = on_off_sequence[0]
             captured_self._run_state_changed_callbacks()
             await hass.async_block_till_done()
 
-            assert (
-                hass.states.get(entity_id).state == STATE_OFF
-            ), "Expected initial state to be off!"
+            assert_switch_state(hass, entity_id, STATE_OFF)
 
         # Else we should start in the unknown position
         else:
-            assert (
-                hass.states.get(entity_id).state == STATE_UNKNOWN
-            ), "Expected initial state to be unknown!"
+            assert_switch_state(hass, entity_id, STATE_UNKNOWN)
 
         # Turn on
         await hass.services.async_call(
@@ -389,18 +403,16 @@ async def test_switch_entities(
 
         # If we have a state attribute it should now be in the on position
         if state_attribute:
+            assert mock_state_attribute is not None
+            assert on_off_sequence is not None
             mock_state_attribute.return_value = on_off_sequence[1]
             captured_self._run_state_changed_callbacks()
 
-            assert (
-                hass.states.get(entity_id).state == STATE_ON
-            ), "Expected new state to be on!"
+            assert_switch_state(hass, entity_id, STATE_ON)
 
         # Else it should remain in unknown position
         else:
-            assert (
-                hass.states.get(entity_id).state == STATE_UNKNOWN
-            ), "Expected state to remain unknown!"
+            assert_switch_state(hass, entity_id, STATE_UNKNOWN)
 
         # Turn off
         await hass.services.async_call(
@@ -413,15 +425,13 @@ async def test_switch_entities(
 
         # If we have a state attribute it should now be in the off position
         if state_attribute:
+            assert mock_state_attribute is not None
+            assert on_off_sequence is not None
             mock_state_attribute.return_value = on_off_sequence[2]
             captured_self._run_state_changed_callbacks()
 
-            assert (
-                hass.states.get(entity_id).state == STATE_OFF
-            ), "Expected final state to be off!"
+            assert_switch_state(hass, entity_id, STATE_OFF)
 
         # Else it should remain in unknown position
         else:
-            assert (
-                hass.states.get(entity_id).state == STATE_UNKNOWN
-            ), "Expected final state to remain unknown!"
+            assert_switch_state(hass, entity_id, STATE_UNKNOWN)
