@@ -1,7 +1,24 @@
+target-version = "py313"
 
 [lint]
 select = ["ALL"]
-ignore = ["D202", "D212", "D213", "G004", "FURB171"]
+ignore = [
+    "COM812", # The formatter handles trailing commas.
+    "CPY001", # Copyright is recorded in LICENSE.txt.
+    "D202",
+    "D203", # Use D211's convention for class docstrings.
+    "D212",
+    "D213",
+    "G004",
+    "FURB171",
+]
 
-[per-file-ignores]
-"tests/*" = ["S101", "SLF001"]
+[lint.per-file-ignores]
+"tests/*" = [
+    "ARG001", # Pytest injects fixtures even when their value is unused.
+    "FBT001", # Parametrized test cases include boolean states.
+    "PLR0913", # Each parameter or fixture is a separate test argument.
+    "PLR0917",
+    "S101",
+    "SLF001",
+]
