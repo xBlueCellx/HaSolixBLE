@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth.api import (
     async_ble_device_from_address,
     async_scanner_count,
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_MAC, CONF_NAME
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry, selector
 from SolixBLE import Generic
 
 from . import get_power_station_class
 from .const import DOMAIN, Models
+
+if TYPE_CHECKING:
+    from homeassistant.components import bluetooth
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,26 +36,29 @@ async def validate_input(hass: HomeAssistant, address: str, model: Models) -> No
         _LOGGER.debug("Count of BLE scanners in HA bt: %i", count_scanners)
 
         if count_scanners < 1:
-            raise ScannerNotAvailable
-        raise NotFound
+            raise ScannerNotAvailableError
+        raise NotFoundError
 
-    DeviceClass = get_power_station_class(model)
-    if DeviceClass is Generic:
+    device_class = get_power_station_class(model)
+    if device_class is Generic:
         _LOGGER.warning(
-            f"The device '{ble_device.name}' is not supported and values will not be available to Home Assistant! "
-            f"However when the integration is in debug mode the raw telemetry data and differences between status "
-            f"updates will be printed in the log and this can be used to aid in adding support for new devices."
+            "The device '%s' is not supported and values will not be available "
+            "to Home Assistant! However when the integration is in debug mode "
+            "the raw telemetry data and differences between status updates will "
+            "be printed in the log and this can be used to aid in adding support "
+            "for new devices.",
+            ble_device.name,
         )
 
-    device = DeviceClass(ble_device)
+    device = device_class(ble_device)
     try:
         await device.connect()
 
         if not device.connected:
-            raise CannotConnect
+            raise CannotConnectError
 
         if not device.negotiated:
-            raise CannotNegotiate
+            raise CannotNegotiateError
     finally:
         await device.disconnect()
 
@@ -68,7 +73,8 @@ class SolixBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovery_info: bluetooth.BluetoothServiceInfoBleak | None = None
 
     async def async_step_bluetooth(
-        self, discovery_info: bluetooth.BluetoothServiceInfoBleak
+        self,
+        discovery_info: bluetooth.BluetoothServiceInfoBleak,
     ) -> ConfigFlowResult:
         """Handle a flow initialized by the home assistant scanner."""
 
@@ -89,11 +95,13 @@ class SolixBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self.async_step_confirm()
 
     async def async_step_confirm(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Confirm a single device."""
 
-        assert self._discovery_info is not None
+        if self._discovery_info is None:
+            return self.async_abort(reason="not_implemented")
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -104,20 +112,21 @@ class SolixBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                 model = Models(user_input["device_model"])
                 await validate_input(self.hass, unique_id, model)
 
-            except CannotConnect:
+            except CannotConnectError:
                 errors["base"] = "cannot_connect"
-            except CannotNegotiate:
+            except CannotNegotiateError:
                 errors["base"] = "cannot_negotiate"
-            except ScannerNotAvailable:
+            except ScannerNotAvailableError:
                 errors["base"] = "no_scanners"
-            except NotFound:
+            except NotFoundError:
                 errors["base"] = "not_found"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
-                    title=self._discovery_info.name, data={"model": model.value}
+                    title=self._discovery_info.name,
+                    data={"model": model.value},
                 )
 
         return self.async_show_form(
@@ -128,9 +137,9 @@ class SolixBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                         selector.SelectSelectorConfig(
                             options=[model.value for model in Models],
                             mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    )
-                }
+                        ),
+                    ),
+                },
             ),
             errors=errors,
             description_placeholders={
@@ -140,17 +149,17 @@ class SolixBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
-class CannotConnect(HomeAssistantError):
+class CannotConnectError(HomeAssistantError):
     """Error to indicate we cannot connect."""
 
 
-class CannotNegotiate(HomeAssistantError):
+class CannotNegotiateError(HomeAssistantError):
     """Error to indicate we failed to negotiate encryption schemes."""
 
 
-class ScannerNotAvailable(HomeAssistantError):
+class ScannerNotAvailableError(HomeAssistantError):
     """Error to indicate no bluetooth scanners are available."""
 
 
-class NotFound(HomeAssistantError):
+class NotFoundError(HomeAssistantError):
     """Error to indicate the device could not be found."""

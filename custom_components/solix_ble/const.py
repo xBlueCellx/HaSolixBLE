@@ -86,6 +86,8 @@ CUT_OFF_SB2_STRINGS = ["Unknown", "5%", "10%"]
 
 
 class Models(Enum):
+    """Device models supported by the integration."""
+
     C300 = "C300(X)"
     C300DC = "C300(X) DC"
     C800 = "C800(X)"

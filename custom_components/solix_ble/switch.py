@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from SolixBLE import (
     C300,
     C300DC,
@@ -27,137 +26,112 @@ _LOGGER = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
     from . import SolixBLEConfigEntry
 
 
+@dataclass(frozen=True, kw_only=True)
+class SolixSwitchDescription:
+    """Describe a switch and the device models that provide it."""
+
+    models: tuple[type[SolixBLEDevice], ...]
+    name: str
+    attribute: str
+    state_attribute: str | None
+    on_function_attribute: str
+    off_function_attribute: str
+
+
+SWITCH_DESCRIPTIONS = (
+    SolixSwitchDescription(
+        models=(C300, C800, C1000, C1000G2, F2600, F3800),
+        name="AC Output",
+        attribute="ac_output",
+        state_attribute="ac_output",
+        on_function_attribute="turn_ac_on",
+        off_function_attribute="turn_ac_off",
+    ),
+    SolixSwitchDescription(
+        models=(C300, C300DC, C1000, C1000G2, F2600, F3800),
+        name="DC Output",
+        attribute="dc_output",
+        state_attribute="dc_output",
+        on_function_attribute="turn_dc_on",
+        off_function_attribute="turn_dc_off",
+    ),
+    SolixSwitchDescription(
+        models=(C800,),
+        name="DC Output",
+        attribute="dc_output",
+        state_attribute=None,
+        on_function_attribute="turn_dc_on",
+        off_function_attribute="turn_dc_off",
+    ),
+    SolixSwitchDescription(
+        models=(C300, C800, C1000, F2600),
+        name="Display",
+        attribute="display_on_off",
+        state_attribute=None,
+        on_function_attribute="turn_display_on",
+        off_function_attribute="turn_display_off",
+    ),
+    SolixSwitchDescription(
+        models=(PrimeCharger160w, PrimeCharger250w),
+        name="USB Port C1",
+        attribute="usb_port_c1",
+        state_attribute="usb_port_c1",
+        on_function_attribute="turn_usb_c1_on",
+        off_function_attribute="turn_usb_c1_off",
+    ),
+    SolixSwitchDescription(
+        models=(PrimeCharger160w, PrimeCharger250w),
+        name="USB Port C2",
+        attribute="usb_port_c2",
+        state_attribute="usb_port_c2",
+        on_function_attribute="turn_usb_c2_on",
+        off_function_attribute="turn_usb_c2_off",
+    ),
+    SolixSwitchDescription(
+        models=(PrimeCharger160w, PrimeCharger250w),
+        name="USB Port C3",
+        attribute="usb_port_c3",
+        state_attribute="usb_port_c3",
+        on_function_attribute="turn_usb_c3_on",
+        off_function_attribute="turn_usb_c3_off",
+    ),
+    SolixSwitchDescription(
+        models=(PrimeCharger250w,),
+        name="USB Port C4",
+        attribute="usb_port_c4",
+        state_attribute="usb_port_c4",
+        on_function_attribute="turn_usb_c4_on",
+        off_function_attribute="turn_usb_c4_off",
+    ),
+    SolixSwitchDescription(
+        models=(PrimeCharger250w,),
+        name="USB Port A1/A2",
+        attribute="usb_port_a1_a2",
+        state_attribute=None,
+        on_function_attribute="turn_usb_a1_a2_on",
+        off_function_attribute="turn_usb_a1_a2_off",
+    ),
+)
+
+
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     config_entry: SolixBLEConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the switches."""
-
+    """Set up the switches supported by the device model."""
     device = config_entry.runtime_data
-    switches: list[SolixSwitchEntity] = []
-
-    # Support for AC output switch with status
-    if type(device) in [C300, C800, C1000, C1000G2, F2600, F3800]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "AC Output",
-                "ac_output",
-                "ac_output",
-                "turn_ac_on",
-                "turn_ac_off",
-            )
-        )
-
-    # Support for DC output switch with status
-    if type(device) in [C300, C300DC, C1000, C1000G2, F2600, F3800]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "DC Output",
-                "dc_output",
-                "dc_output",
-                "turn_dc_on",
-                "turn_dc_off",
-            ),
-        )
-
-    # Support for DC output switch without status
-    if type(device) in [C800]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "DC Output",
-                "dc_output",
-                None,
-                "turn_dc_on",
-                "turn_dc_off",
-            ),
-        )
-
-    # Support for display on/off switch without status
-    if type(device) in [C300, C800, C1000, F2600]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "Display",
-                "display_on_off",
-                None,
-                "turn_display_on",
-                "turn_display_off",
-            ),
-        )
-
-    # Support for controlling USB Port C1
-    if type(device) in [PrimeCharger160w, PrimeCharger250w]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "USB Port C1",
-                "usb_port_c1",
-                "usb_port_c1",
-                "turn_usb_c1_on",
-                "turn_usb_c1_off",
-            ),
-        )
-
-    # Support for controlling USB Port C2
-    if type(device) in [PrimeCharger160w, PrimeCharger250w]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "USB Port C2",
-                "usb_port_c2",
-                "usb_port_c2",
-                "turn_usb_c2_on",
-                "turn_usb_c2_off",
-            ),
-        )
-
-    # Support for controlling USB Port C3
-    if type(device) in [PrimeCharger160w, PrimeCharger250w]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "USB Port C3",
-                "usb_port_c3",
-                "usb_port_c3",
-                "turn_usb_c3_on",
-                "turn_usb_c3_off",
-            ),
-        )
-
-    # Support for controlling USB Port C4
-    if type(device) in [PrimeCharger250w]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "USB Port C4",
-                "usb_port_c4",
-                "usb_port_c4",
-                "turn_usb_c4_on",
-                "turn_usb_c4_off",
-            ),
-        )
-
-    # Support for controlling combined USB Port A1 and A2 w/o status
-    if type(device) in [PrimeCharger250w]:
-        switches.append(
-            SolixSwitchEntity(
-                device,
-                "USB Port A1/A2",
-                "usb_port_a1_a2",
-                None,
-                "turn_usb_a1_a2_on",
-                "turn_usb_a1_a2_off",
-            ),
-        )
-
-    async_add_entities(switches)
+    async_add_entities(
+        SolixSwitchEntity(device, description)
+        for description in SWITCH_DESCRIPTIONS
+        if type(device) in description.models
+    )
 
 
 class SolixSwitchEntity(SwitchEntity):
@@ -169,29 +143,17 @@ class SolixSwitchEntity(SwitchEntity):
     def __init__(
         self,
         device: SolixBLEDevice,
-        name: str,
-        attribute: str,
-        state_attribute: str | None,
-        on_function_attribute: str,
-        off_function_attribute: str,
+        description: SolixSwitchDescription,
     ) -> None:
-        """Initialize the device object. Does not connect.
-
-        :param device: The device API object.
-        :param name: Name of the switch entity.
-        :param attribute: Attribute used in unique ID generation.
-        :param state_attribute: Name of function in API object to determine state.
-        :param on_function_attribute: Name of function in API object to turn switch on.
-        :param off_function_attribute: Name of function in API object to turn switch off.
-        """
+        """Initialize the switch from its description without connecting."""
         self._device = device
         self._address = device.address
-        self._state_attribute = state_attribute
-        self._on_function = getattr(device, on_function_attribute)
-        self._off_function = getattr(device, off_function_attribute)
+        self._state_attribute = description.state_attribute
+        self._on_function = getattr(device, description.on_function_attribute)
+        self._off_function = getattr(device, description.off_function_attribute)
 
-        self._attr_name = name
-        self._attr_unique_id = f"{device.address}_{attribute}"
+        self._attr_name = description.name
+        self._attr_unique_id = f"{device.address}_{description.attribute}"
         self._attr_device_info = DeviceInfo(
             name=device.name,
             connections={(CONNECTION_BLUETOOTH, device.address)},
@@ -221,9 +183,10 @@ class SolixSwitchEntity(SwitchEntity):
                 elif state is PortStatus.OUTPUT:
                     self._attr_is_on = True
                 else:
-                    raise RuntimeError(
+                    message = (
                         f"Unexpected port status '{state}' with type '{type(state)}'!"
                     )
+                    raise RuntimeError(message)
             else:
                 self._attr_is_on = state
 
@@ -233,10 +196,10 @@ class SolixSwitchEntity(SwitchEntity):
         self._update_updatable_attributes()
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **_kwargs: object) -> None:
         """Turn the entity on."""
         await self._on_function()
 
-    async def async_turn_off(self, **kwargs):
-        """Turn the entity on."""
+    async def async_turn_off(self, **_kwargs: object) -> None:
+        """Turn the entity off."""
         await self._off_function()

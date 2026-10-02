@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.components.sensor.const import SensorDeviceClass
 from homeassistant.const import UnitOfTemperature
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.dt import as_local
 from SolixBLE import (
     C300,
@@ -46,1143 +46,785 @@ _LOGGER = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
     from . import SolixBLEConfigEntry
 
 
+@dataclass(frozen=True, kw_only=True)
+class SolixSensorDescription:
+    """Describe a sensor and the device models that provide it."""
+
+    models: tuple[type[SolixBLEDevice], ...]
+    name: str
+    unit: str | None
+    attribute: str
+    device_class: SensorDeviceClass | None = None
+    enum_options: list[str] | None = None
+    state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
+
+
+SENSOR_DESCRIPTIONS = (
+    SolixSensorDescription(
+        models=(C300, C300DC),
+        name="Charging Status",
+        unit=None,
+        attribute="charging_status",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=CHARGING_STATUS_C300_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(F2600, F3800),
+        name="Charging Status",
+        unit=None,
+        attribute="charging_status",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=CHARGING_STATUS_F3800_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2000, F2600, F3800),
+        name="Remaining Hours",
+        unit="hours",
+        attribute="hours_remaining",
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2000, F2600, F3800),
+        name="Remaining Days",
+        unit="days",
+        attribute="days_remaining",
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2000, F2600, F3800),
+        name="Remaining Time",
+        unit="hours",
+        attribute="time_remaining",
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2000, F2600, F3800),
+        name="Timestamp Remaining",
+        unit=None,
+        attribute="timestamp_remaining",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            Solarbank2,
+            PrimePowerBank20k,
+        ),
+        name="Battery Percentage",
+        unit="%",
+        attribute="battery_percentage",
+        device_class=SensorDeviceClass.BATTERY,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Battery charge power",
+        unit="W",
+        attribute="battery_charge_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Battery discharge power",
+        unit="W",
+        attribute="battery_discharge_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, C800, C1000, C1000G2, F2000, F2600),
+        name="Battery Health",
+        unit="%",
+        attribute="battery_health",
+        device_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Battery input energy",
+        unit="kWh",
+        attribute="charged_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Total output energy",
+        unit="kWh",
+        attribute="output_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Output cutoff threshold",
+        unit=None,
+        attribute="output_cutoff_data",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=CUT_OFF_SB2_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Input cutoff threshold",
+        unit=None,
+        attribute="input_cutoff_data",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=CUT_OFF_SB2_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            Solarbank2,
+            PrimePowerBank20k,
+        ),
+        name="Temperature",
+        unit=UnitOfTemperature.CELSIUS,
+        attribute="temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2600),
+        name="Total Power In",
+        unit="W",
+        attribute="power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2600,
+            F3800,
+            Solarbank2,
+            PrimePowerBank20k,
+            MagGo3in1,
+        ),
+        name="Total Power Out",
+        unit="W",
+        attribute="power_out",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300, C800, C1000, C1000G2, F2000, F2600, F3800),
+        name="AC Power In",
+        unit="W",
+        attribute="ac_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2),
+        name="AC Power Out",
+        unit="W",
+        attribute="ac_power_out",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300, C800, C1000, C1000G2, F2600, F3800),
+        name="Status AC Out",
+        unit=None,
+        attribute="ac_output",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C800, C1000, F2600),
+        name="AC Timer",
+        unit=None,
+        attribute="ac_timer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2),
+        name="Solar Power In",
+        unit="W",
+        attribute="solar_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="PV Yield",
+        unit="kWh",
+        attribute="pv_yield",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C1000, C1000G2),
+        name="DC Power Out",
+        unit="W",
+        attribute="dc_power_out",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(F2600,),
+        name="DC Power Out 1",
+        unit="W",
+        attribute="dc_1_power_out",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(F2600,),
+        name="DC Power Out 2",
+        unit="W",
+        attribute="dc_2_power_out",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, F2600),
+        name="Status Solar",
+        unit=None,
+        attribute="solar_port",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C1000, C1000G2, F3800),
+        name="Status DC Out",
+        unit=None,
+        attribute="dc_output",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, F2600),
+        name="DC Timer",
+        unit=None,
+        attribute="dc_timer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="USB C1 Power",
+        unit="W",
+        attribute="usb_c1_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="USB C2 Power",
+        unit="W",
+        attribute="usb_c2_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+        ),
+        name="USB C3 Power",
+        unit="W",
+        attribute="usb_c3_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, PrimeCharger250w),
+        name="USB C4 Power",
+        unit="W",
+        attribute="usb_c4_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C800,
+            C1000,
+            C1000G2,
+            F2000,
+            F2600,
+            F3800,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="USB A1 Power",
+        unit="W",
+        attribute="usb_a1_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, C800, C1000, F2000, F2600, F3800, PrimeCharger250w),
+        name="USB A2 Power",
+        unit="W",
+        attribute="usb_a2_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C1000G2,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="Status USB C1",
+        unit=None,
+        attribute="usb_port_c1",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C1000G2,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="Status USB C2",
+        unit=None,
+        attribute="usb_port_c2",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C1000G2,
+            F2600,
+            F3800,
+            PrimeCharger160w,
+            PrimeCharger250w,
+        ),
+        name="Status USB C3",
+        unit=None,
+        attribute="usb_port_c3",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, PrimeCharger250w),
+        name="Status USB C4",
+        unit=None,
+        attribute="usb_port_c4",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(
+            C300,
+            C300DC,
+            C1000G2,
+            F2600,
+            F3800,
+            PrimeCharger250w,
+            PrimePowerBank20k,
+        ),
+        name="Status USB A1",
+        unit=None,
+        attribute="usb_port_a1",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, F2600, F3800, PrimeCharger250w),
+        name="Status USB A2",
+        unit=None,
+        attribute="usb_port_a2",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=PORT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300DC,),
+        name="Overload Status",
+        unit=None,
+        attribute="device_overload",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=OVERLOAD_STATUS_C300DC_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k),
+        name="USB C1 Voltage",
+        unit="V",
+        attribute="usb_c1_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k),
+        name="USB C2 Voltage",
+        unit="V",
+        attribute="usb_c2_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w),
+        name="USB C3 Voltage",
+        unit="V",
+        attribute="usb_c3_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w,),
+        name="USB C4 Voltage",
+        unit="V",
+        attribute="usb_c4_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w, PrimePowerBank20k),
+        name="USB A1 Voltage",
+        unit="V",
+        attribute="usb_a1_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w,),
+        name="USB A2 Voltage",
+        unit="V",
+        attribute="usb_a2_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k),
+        name="USB C1 Current",
+        unit="A",
+        attribute="usb_c1_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k),
+        name="USB C2 Current",
+        unit="A",
+        attribute="usb_c2_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger160w, PrimeCharger250w),
+        name="USB C3 Current",
+        unit="A",
+        attribute="usb_c3_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w,),
+        name="USB C4 Current",
+        unit="A",
+        attribute="usb_c4_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w, PrimePowerBank20k),
+        name="USB A1 Current",
+        unit="A",
+        attribute="usb_a1_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(PrimeCharger250w,),
+        name="USB A2 Current",
+        unit="A",
+        attribute="usb_a2_current",
+        device_class=SensorDeviceClass.CURRENT,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, F2600),
+        name="Status Light",
+        unit=None,
+        attribute="light",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=LIGHT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300DC, F2600),
+        name="Display Status",
+        unit=None,
+        attribute="display_mode",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=LIGHT_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Error code",
+        unit=None,
+        attribute="error_code",
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, F2000, F2600, F3800, Solarbank2),
+        name="Firmware Version",
+        unit=None,
+        attribute="software_version",
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C300, C300DC, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2),
+        name="Serial Number",
+        unit=None,
+        attribute="serial_number",
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C1000, F2000, F2600),
+        name="Expansion Battery Temperature",
+        unit=UnitOfTemperature.CELSIUS,
+        attribute="temperature_expansion",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    SolixSensorDescription(
+        models=(C1000, F2000, F2600),
+        name="Expansion Battery Percentage",
+        unit="%",
+        attribute="battery_percentage_expansion",
+        device_class=SensorDeviceClass.BATTERY,
+    ),
+    SolixSensorDescription(
+        models=(F3800, Solarbank2),
+        name="Average Battery Percentage",
+        unit="%",
+        attribute="battery_percentage_aggregate",
+        device_class=SensorDeviceClass.BATTERY,
+    ),
+    SolixSensorDescription(
+        models=(C1000, F2000, F2600),
+        name="Expansion Battery Health",
+        unit="%",
+        attribute="battery_health_expansion",
+        device_class=SensorDeviceClass.BATTERY,
+    ),
+    SolixSensorDescription(
+        models=(C1000, F2000, F2600, Solarbank2),
+        name="Expansion Battery Firmware Version",
+        unit=None,
+        attribute="software_version_expansion",
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(C1000, F2000, F2600),
+        name="Number Of Expansion Batteries",
+        unit=None,
+        attribute="num_expansion",
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Grid to Home power",
+        unit="W",
+        attribute="grid_to_home_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="PV to Grid power",
+        unit="W",
+        attribute="pv_to_grid_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Grid import energy",
+        unit="kWh",
+        attribute="grid_import_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Grid export energy",
+        unit="kWh",
+        attribute="grid_export_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="House demand power",
+        unit="W",
+        attribute="house_demand",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="House consumed energy",
+        unit="kWh",
+        attribute="consumed_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(F2600, Solarbank2),
+        name="AC Power Out Sockets",
+        unit="W",
+        attribute="ac_power_out_sockets",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Maximum load",
+        unit=None,
+        attribute="max_load",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=MAX_LOAD_SB2_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Usage mode",
+        unit=None,
+        attribute="usage_mode",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=USAGE_MODE_SB2_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Solar Power In Port 1",
+        unit="W",
+        attribute="solar_pv_1_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Solar Power In Port 2",
+        unit="W",
+        attribute="solar_pv_2_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Solar Power In Port 3",
+        unit="W",
+        attribute="solar_pv_3_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Solar Power In Port 4",
+        unit="W",
+        attribute="solar_pv_4_power_in",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Status light",
+        unit=None,
+        attribute="light_mode",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=LIGHT_STATUS_SB2_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Grid Status",
+        unit=None,
+        attribute="grid_status",
+        device_class=SensorDeviceClass.ENUM,
+        enum_options=GRID_STATUS_STRINGS,
+        state_class=None,
+    ),
+    SolixSensorDescription(
+        models=(Solarbank2,),
+        name="Battery Heating",
+        unit=None,
+        attribute="battery_heating",
+        device_class=None,
+    ),
+    SolixSensorDescription(
+        models=(MagGo3in1,),
+        name="Pad 1 Power",
+        unit="W",
+        attribute="pad_1_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(MagGo3in1,),
+        name="Pad 2 Power",
+        unit="W",
+        attribute="pad_2_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+    SolixSensorDescription(
+        models=(MagGo3in1,),
+        name="Pad 3 Power",
+        unit="W",
+        attribute="pad_3_power",
+        device_class=SensorDeviceClass.POWER,
+    ),
+)
+
+
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     config_entry: SolixBLEConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Sensors."""
-
+    """Set up the sensors supported by the device model."""
     device = config_entry.runtime_data
-    sensors: list[SolixSensorEntity] = []
-
-    # Charging status sensor
-    if type(device) in [C300, C300DC]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Charging Status",
-                None,
-                "charging_status",
-                SensorDeviceClass.ENUM,
-                CHARGING_STATUS_C300_STRINGS,
-                None,
-            )
-        )
-
-    # Charging status sensor
-    if type(device) in [F2600, F3800]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Charging Status",
-                None,
-                "charging_status",
-                SensorDeviceClass.ENUM,
-                CHARGING_STATUS_F3800_STRINGS,
-                None,
-            )
-        )
-
-    # Time remaining sensor
-    if type(device) in [C300, C300DC, C800, C1000, F2000, F2600, F3800]:
-        sensors.append(
-            SolixSensorEntity(device, "Remaining Hours", "hours", "hours_remaining"),
-        )
-        sensors.append(
-            SolixSensorEntity(device, "Remaining Days", "days", "days_remaining"),
-        )
-        sensors.append(
-            SolixSensorEntity(device, "Remaining Time", "hours", "time_remaining"),
-        )
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Timestamp Remaining",
-                None,
-                "timestamp_remaining",
-                SensorDeviceClass.TIMESTAMP,
-                state_class=None,
-            )
-        ),
-
-    # Battery percentage sensor
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        Solarbank2,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery Percentage",
-                "%",
-                "battery_percentage",
-                SensorDeviceClass.BATTERY,
-            )
-        )
-
-    # Battery charge power sensor
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery charge power",
-                "W",
-                "battery_charge_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Battery discharge power sensor
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery discharge power",
-                "W",
-                "battery_discharge_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Battery health sensor
-    if type(device) in [C300DC, C800, C1000, C1000G2, F2000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery Health",
-                "%",
-                "battery_health",
-                None,
-            )
-        )
-
-    # Battery charged energy (energy in)
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery input energy",
-                "kWh",
-                "charged_energy",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # Solarbank dispensed energy (energy out)
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Total output energy",
-                "kWh",
-                "output_energy",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # Output cutoff thresholds
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Output cutoff threshold",
-                None,
-                "output_cutoff_data",
-                SensorDeviceClass.ENUM,
-                CUT_OFF_SB2_STRINGS,
-                state_class=None,
-            )
-        )
-
-    # Input cutoff thresholds
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Input cutoff threshold",
-                None,
-                "input_cutoff_data",
-                SensorDeviceClass.ENUM,
-                CUT_OFF_SB2_STRINGS,
-                state_class=None,
-            )
-        )
-
-    # Temperature sensor
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        Solarbank2,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Temperature",
-                UnitOfTemperature.CELSIUS,
-                "temperature",
-                SensorDeviceClass.TEMPERATURE,
-            )
-        )
-
-    # Total power in sensor
-    if type(device) in [C300, C300DC, C800, C1000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device, "Total Power In", "W", "power_in", SensorDeviceClass.POWER
-            )
-        )
-
-    # Total power out sensor
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2600,
-        F3800,
-        Solarbank2,
-        PrimePowerBank20k,
-        MagGo3in1,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device, "Total Power Out", "W", "power_out", SensorDeviceClass.POWER
-            )
-        )
-
-    # AC power in sensor
-    if type(device) in [C300, C800, C1000, C1000G2, F2000, F2600, F3800]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "AC Power In",
-                "W",
-                "ac_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # AC power out sensor
-    if type(device) in [C300, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "AC Power Out",
-                "W",
-                "ac_power_out",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # AC output on/off sensor
-    if type(device) in [C300, C800, C1000, C1000G2, F2600, F3800]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status AC Out",
-                None,
-                "ac_output",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # AC output timer
-    if type(device) in [C300, C800, C1000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "AC Timer",
-                None,
-                "ac_timer",
-                SensorDeviceClass.TIMESTAMP,
-                state_class=None,
-            )
-        )
-
-    # Solar power in
-    if type(device) in [C300, C300DC, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Solar Power In",
-                "W",
-                "solar_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Solar yield
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "PV Yield",
-                "kWh",
-                "pv_yield",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # DC power out
-    if type(device) in [C300, C300DC, C1000, C1000G2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "DC Power Out",
-                "W",
-                "dc_power_out",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # DC power out for port 1
-    if type(device) in [F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "DC Power Out 1",
-                "W",
-                "dc_1_power_out",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # DC power out for port 2
-    if type(device) in [F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "DC Power Out 2",
-                "W",
-                "dc_2_power_out",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # DC/Solar power in status
-    if type(device) in [C300DC, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status Solar",
-                None,
-                "solar_port",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # DC power out status
-    if type(device) in [C300, C1000, C1000G2, F3800]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status DC Out",
-                None,
-                "dc_output",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # DC Timer
-    if type(device) in [C300, C300DC, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "DC Timer",
-                None,
-                "dc_timer",
-                SensorDeviceClass.TIMESTAMP,
-                state_class=None,
-            )
-        )
-
-    # USB C1 power out
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C1 Power",
-                "W",
-                "usb_c1_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB C2 power out
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C2 Power",
-                "W",
-                "usb_c2_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB C3 power out
-    if type(device) in [
-        C300,
-        C300DC,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C3 Power",
-                "W",
-                "usb_c3_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB C4 power out
-    if type(device) in [C300DC, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C4 Power",
-                "W",
-                "usb_c4_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB A1 power out
-    if type(device) in [
-        C300,
-        C300DC,
-        C800,
-        C1000,
-        C1000G2,
-        F2000,
-        F2600,
-        F3800,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A1 Power",
-                "W",
-                "usb_a1_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB A2 power out
-    if type(device) in [C300DC, C800, C1000, F2000, F2600, F3800, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A2 Power",
-                "W",
-                "usb_a2_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # USB C1 status
-    if type(device) in [
-        C300,
-        C300DC,
-        C1000G2,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB C1",
-                None,
-                "usb_port_c1",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # USB C2 status
-    if type(device) in [
-        C300,
-        C300DC,
-        C1000G2,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB C2",
-                None,
-                "usb_port_c2",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # USB C3 status
-    if type(device) in [
-        C300,
-        C300DC,
-        C1000G2,
-        F2600,
-        F3800,
-        PrimeCharger160w,
-        PrimeCharger250w,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB C3",
-                None,
-                "usb_port_c3",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # USB C4 status
-    if type(device) in [C300DC, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB C4",
-                None,
-                "usb_port_c4",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # USB A1 status
-    if type(device) in [
-        C300,
-        C300DC,
-        C1000G2,
-        F2600,
-        F3800,
-        PrimeCharger250w,
-        PrimePowerBank20k,
-    ]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB A1",
-                None,
-                "usb_port_a1",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # USB A2 status
-    if type(device) in [C300DC, F2600, F3800, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status USB A2",
-                None,
-                "usb_port_a2",
-                SensorDeviceClass.ENUM,
-                PORT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # Overload status
-    if type(device) in [C300DC]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Overload Status",
-                None,
-                "device_overload",
-                SensorDeviceClass.ENUM,
-                OVERLOAD_STATUS_C300DC_STRINGS,
-                None,
-            )
-        )
-
-    # USB C1 voltage out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C1 Voltage",
-                "V",
-                "usb_c1_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB C2 voltage out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C2 Voltage",
-                "V",
-                "usb_c2_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB C3 voltage out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C3 Voltage",
-                "V",
-                "usb_c3_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB C4 voltage out
-    if type(device) in [PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C4 Voltage",
-                "V",
-                "usb_c4_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB A1 voltage out
-    if type(device) in [PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A1 Voltage",
-                "V",
-                "usb_a1_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB A2 voltage out
-    if type(device) in [PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A2 Voltage",
-                "V",
-                "usb_a2_voltage",
-                SensorDeviceClass.VOLTAGE,
-            )
-        )
-
-    # USB C1 current out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C1 Current",
-                "A",
-                "usb_c1_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # USB C2 current out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C2 Current",
-                "A",
-                "usb_c2_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # USB C3 current out
-    if type(device) in [PrimeCharger160w, PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C3 Current",
-                "A",
-                "usb_c3_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # USB C4 current out
-    if type(device) in [PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB C4 Current",
-                "A",
-                "usb_c4_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # USB A1 current out
-    if type(device) in [PrimeCharger250w, PrimePowerBank20k]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A1 Current",
-                "A",
-                "usb_a1_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # USB A2 current out
-    if type(device) in [PrimeCharger250w]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "USB A2 Current",
-                "A",
-                "usb_a2_current",
-                SensorDeviceClass.CURRENT,
-            )
-        )
-
-    # Light status
-    if type(device) in [C300, C300DC, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status Light",
-                None,
-                "light",
-                SensorDeviceClass.ENUM,
-                LIGHT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # Display status
-    if type(device) in [C300DC, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Display Status",
-                None,
-                "display_mode",
-                SensorDeviceClass.ENUM,
-                LIGHT_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # Error status
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Error code",
-                None,
-                "error_code",
-                state_class=None,
-            )
-        )
-
-    # Firmware version
-    if type(device) in [C300, C300DC, C800, C1000, F2000, F2600, F3800, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Firmware Version",
-                None,
-                "software_version",
-                state_class=None,
-            )
-        )
-
-    # Serial number
-    if type(device) in [C300, C300DC, C800, C1000, C1000G2, F2000, F2600, F3800, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Serial Number",
-                None,
-                "serial_number",
-                state_class=None,
-            )
-        )
-
-    # Expansion battery temperature sensor
-    if type(device) in [C1000, F2000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Expansion Battery Temperature",
-                UnitOfTemperature.CELSIUS,
-                "temperature_expansion",
-                SensorDeviceClass.TEMPERATURE,
-            )
-        )
-
-    # Expansion battery percentage
-    if type(device) in [C1000, F2000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Expansion Battery Percentage",
-                "%",
-                "battery_percentage_expansion",
-                SensorDeviceClass.BATTERY,
-            )
-        )
-
-    # Average battery percentage across all batteries
-    if type(device) in [F3800, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Average Battery Percentage",
-                "%",
-                "battery_percentage_aggregate",
-                SensorDeviceClass.BATTERY,
-            )
-        )
-
-    # Expansion battery health
-    if type(device) in [C1000, F2000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Expansion Battery Health",
-                "%",
-                "battery_health_expansion",
-                SensorDeviceClass.BATTERY,
-            )
-        )
-
-    # Expansion battery firmware version
-    if type(device) in [C1000, F2000, F2600, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Expansion Battery Firmware Version",
-                None,
-                "software_version_expansion",
-                state_class=None,
-            )
-        )
-
-    # Number of expansion batteries
-    if type(device) in [C1000, F2000, F2600]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Number Of Expansion Batteries",
-                None,
-                "num_expansion",
-            )
-        )
-
-    ######################
-    # Solar bank sensors #
-    ######################
-
-    # Grid to home power
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Grid to Home power",
-                "W",
-                "grid_to_home_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # PV to grid power
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "PV to Grid power",
-                "W",
-                "pv_to_grid_power",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Grid import energy
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Grid import energy",
-                "kWh",
-                "grid_import_energy",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # Grid export energy
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Grid export energy",
-                "kWh",
-                "grid_export_energy",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # House demand (power used by house)
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "House demand power",
-                "W",
-                "house_demand",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # House demand (power used by house)
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "House consumed energy",
-                "kWh",
-                "consumed_energy",
-                SensorDeviceClass.ENERGY,
-                state_class=None,
-            )
-        )
-
-    # Power out of the built-in sockets
-    if type(device) in [F2600, Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "AC Power Out Sockets",
-                "W",
-                "ac_power_out_sockets",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Max load
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Maximum load",
-                None,
-                "max_load",
-                SensorDeviceClass.ENUM,
-                MAX_LOAD_SB2_STRINGS,
-                state_class=None,
-            )
-        )
-
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Usage mode",
-                None,
-                "usage_mode",
-                SensorDeviceClass.ENUM,
-                USAGE_MODE_SB2_STRINGS,
-                state_class=None,
-            )
-        )
-
-    # Solar PV power in for port 1
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Solar Power In Port 1",
-                "W",
-                "solar_pv_1_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Solar PV power in for port 2
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Solar Power In Port 2",
-                "W",
-                "solar_pv_2_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Solar PV power in for port 3
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Solar Power In Port 3",
-                "W",
-                "solar_pv_3_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Solar PV power in for port 4
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Solar Power In Port 4",
-                "W",
-                "solar_pv_4_power_in",
-                SensorDeviceClass.POWER,
-            )
-        )
-
-    # Solarbank light status
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Status light",
-                None,
-                "light_mode",
-                SensorDeviceClass.ENUM,
-                LIGHT_STATUS_SB2_STRINGS,
-                None,
-            )
-        )
-
-    # Grid status
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Grid Status",
-                None,
-                "grid_status",
-                SensorDeviceClass.ENUM,
-                GRID_STATUS_STRINGS,
-                None,
-            )
-        )
-
-    # Heater status
-    if type(device) in [Solarbank2]:
-        sensors.append(
-            SolixSensorEntity(
-                device,
-                "Battery Heating",
-                None,
-                "battery_heating",
-                None,
-            )
-        )
-
-    # Wireless charging pad 1 power out
-    if type(device) in [MagGo3in1]:
-        sensors.append(
-            SolixSensorEntity(
-                device, "Pad 1 Power", "W", "pad_1_power", SensorDeviceClass.POWER
-            )
-        )
-
-    # Wireless charging pad 2 power out
-    if type(device) in [MagGo3in1]:
-        sensors.append(
-            SolixSensorEntity(
-                device, "Pad 2 Power", "W", "pad_2_power", SensorDeviceClass.POWER
-            )
-        )
-
-    # Wireless charging pad 3 power out
-    if type(device) in [MagGo3in1]:
-        sensors.append(
-            SolixSensorEntity(
-                device, "Pad 3 Power", "W", "pad_3_power", SensorDeviceClass.POWER
-            )
-        )
-
-    async_add_entities(sensors)
+    async_add_entities(
+        SolixSensorEntity(device, description)
+        for description in SENSOR_DESCRIPTIONS
+        if type(device) in description.models
+    )
 
 
 class SolixSensorEntity(SensorEntity):
@@ -1194,25 +836,20 @@ class SolixSensorEntity(SensorEntity):
     def __init__(
         self,
         device: SolixBLEDevice,
-        name: str,
-        unit: str,
-        attribute: str,
-        device_class: SensorDeviceClass | None = None,
-        enum_options: list[str] | None = None,
-        state_class: SensorStateClass = SensorStateClass.MEASUREMENT,
+        description: SolixSensorDescription,
     ) -> None:
         """Initialize the device object. Does not connect."""
 
-        self._attribute_name = attribute
+        self._attribute_name = description.attribute
 
         self._device = device
         self._address = device.address
-        self._attr_name = name
-        self._attr_unique_id = f"{device.address}_{attribute}"
-        self._attr_native_unit_of_measurement = unit
-        self._attr_device_class = device_class
-        self._attr_options = enum_options
-        self._attr_state_class = state_class
+        self._attr_name = description.name
+        self._attr_unique_id = f"{device.address}_{description.attribute}"
+        self._attr_native_unit_of_measurement = description.unit
+        self._attr_device_class = description.device_class
+        self._attr_options = description.enum_options
+        self._attr_state_class = description.state_class
         self._attr_device_info = DeviceInfo(
             name=device.name,
             connections={(CONNECTION_BLUETOOTH, device.address)},
@@ -1243,6 +880,9 @@ class SolixSensorEntity(SensorEntity):
 
         # If enum use enum strings
         elif self._attr_device_class == SensorDeviceClass.ENUM:
+            if self._attr_options is None or not isinstance(attribute_value, Enum):
+                message = "Enum sensors require options and an enum value"
+                raise ValueError(message)
             self._attr_native_value = self._attr_options[
                 list(type(attribute_value)).index(attribute_value)
             ]
